@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         target:
-          - path: examples/arduino
+          - path: examples/arduino/sleeping_node
             library: library.json
             remove: ""
             extra_dependencies: ""
