@@ -1,0 +1,41 @@
+{
+  "name": "EspNowNetworkNode",
+  "keywords": "esp32, esp-now, ESP Now, now",
+  "description": "Node code for the EspNowNetwork, see https://github.com/Johboh/EspNowNetwork for more details.",
+  "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+  "authors":
+  {
+    "name": "Johan Böhlin"
+  },
+  "version": "0.7.0",
+  "license": "GPL-3.0-or-later",
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/Johboh/EspNowNetworkNode.git"
+  },
+  "build": {
+      "libLDFMode": "deep"
+  },
+  "frameworks": ["espidf", "arduino"],
+  "platforms": ["espressif32"],
+  "examples": [
+    {
+      "name": "Arduino",
+      "base": "examples/arduino",
+      "files": ["arduino.ino"]
+    },
+    {
+      "name": "ESP-IDF",
+      "base": "examples/espidf/main",
+      "files": ["main.cpp"]
+    }
+  ],
+  "dependencies": [
+    {
+      "owner": "johboh",
+      "name": "EspNowNetworkShared",
+      "version": "^1.0.0"
+    }
+  ]
+}

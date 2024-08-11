@@ -1,0 +1,7 @@
+version: "0.7.0"
+description: Node code for the EspNowNetwork, see https://github.com/Johboh/EspNowNetwork for more details.
+url: https://github.com/Johboh/EspNowNetworkNode
+dependencies:
+  idf: ">=4.4"
+  johboh/EspNowNetworkShared:
+    version: ">=1.0.0"
