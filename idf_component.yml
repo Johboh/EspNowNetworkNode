@@ -3,5 +3,5 @@ description: Node code for the EspNowNetwork, see https://github.com/Johboh/EspN
 url: https://github.com/Johboh/EspNowNetworkNode
 dependencies:
   idf: ">=4.4"
-  johboh/EspNowNetworkShared:
+  johboh/espnownetworkshared:
     version: ">=1.0.0"
