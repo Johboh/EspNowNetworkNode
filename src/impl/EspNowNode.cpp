@@ -83,45 +83,7 @@ bool EspNowNode::setup() {
     return true;
   }
 
-  ESP_ERROR_CHECK(esp_netif_init());
-  esp_event_loop_create_default();
-  _netif_sta = esp_netif_create_default_wifi_sta();
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-  ESP_ERROR_CHECK(esp_wifi_start());
-
-  // TODO(johboh): this might unset WIFI6 for ESP32-C6, but getting current protocols and appending WIFI_PROTOCOL_LR and
-  // then setting them again, fails with bad argument. Presumably a bug in esp_wifi_set_protocol not supporting
-  // WIFI_PROTOCOL_11AX?
-  uint8_t protocol_bitmap = WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR;
-  ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, protocol_bitmap));
-
-  // Init ESP-NOW
-  esp_err_t r = esp_now_init();
-  if (r != ESP_OK) {
-    log("Error initializing ESP-NOW:", r);
-    return false;
-  } else {
-    _esp_now_initialized = true;
-    log("Initializing ESP-NOW OK.", ESP_LOG_INFO);
-  }
-
-  // Deprecated, but esp_now_set_peer_rate_config(peer_info.peer_addr, &esp_now_rate_config); does not work.
-  // See https://github.com/espressif/esp-idf/issues/11751 and https://www.esp32.com/viewtopic.php?t=34546
-  r = esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_LORA_250K);
-  log("configuring espnow rate (legacy) failed:", r);
-
-  r = esp_now_register_send_cb(esp_now_on_data_sent);
-  log("Registering send callback for esp now failed:", r);
-
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
-  r = esp_now_register_recv_cb(esp_now_on_data_callback);
-#else
-  r = esp_now_register_recv_cb(esp_now_on_data_callback_legacy);
-#endif
-  log("Registering receive callback for esp now failed:", r);
+  setupWiFiAndEspNow();
 
   // If we have host MAC address, add that one as a peer.
   // Else, add broadcast address and announce our presence.
@@ -151,7 +113,7 @@ bool EspNowNode::setup() {
   // Delete any existing peer. Fail silently (e.g. if not exists)
   esp_now_del_peer(_host_peer_info.peer_addr);
 
-  r = esp_now_add_peer(&_host_peer_info);
+  esp_err_t r = esp_now_add_peer(&_host_peer_info);
   bool success = r == ESP_OK;
   log("Peer adding failure:", r);
 
@@ -250,10 +212,51 @@ bool EspNowNode::setup() {
   return success;
 }
 
-void EspNowNode::teardown() {
-  _setup_successful = false;
-  memset(_host_peer_info.peer_addr, 0x00, ESP_NOW_ETH_ALEN);
+bool EspNowNode::setupWiFiAndEspNow() {
+  ESP_ERROR_CHECK(esp_netif_init());
+  esp_event_loop_create_default();
+  _netif_sta = esp_netif_create_default_wifi_sta();
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+  ESP_ERROR_CHECK(esp_wifi_start());
 
+  // TODO(johboh): this might unset WIFI6 for ESP32-C6, but getting current protocols and appending WIFI_PROTOCOL_LR and
+  // then setting them again, fails with bad argument. Presumably a bug in esp_wifi_set_protocol not supporting
+  // WIFI_PROTOCOL_11AX?
+  uint8_t protocol_bitmap = WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR;
+  ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, protocol_bitmap));
+
+  // Init ESP-NOW
+  esp_err_t r = esp_now_init();
+  if (r != ESP_OK) {
+    log("Error initializing ESP-NOW:", r);
+    return false;
+  } else {
+    _esp_now_initialized = true;
+    log("Initializing ESP-NOW OK.", ESP_LOG_INFO);
+  }
+
+  // Deprecated, but esp_now_set_peer_rate_config(peer_info.peer_addr, &esp_now_rate_config); does not work.
+  // See https://github.com/espressif/esp-idf/issues/11751 and https://www.esp32.com/viewtopic.php?t=34546
+  r = esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_LORA_250K);
+  log("configuring espnow rate (legacy) failed:", r);
+
+  r = esp_now_register_send_cb(esp_now_on_data_sent);
+  log("Registering send callback for esp now failed:", r);
+
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+  r = esp_now_register_recv_cb(esp_now_on_data_callback);
+#else
+  r = esp_now_register_recv_cb(esp_now_on_data_callback_legacy);
+#endif
+  log("Registering receive callback for esp now failed:", r);
+
+  return r == ESP_OK;
+}
+
+void EspNowNode::teardownWifiAndEspNow() {
   esp_wifi_stop();
 
   if (_netif_sta != nullptr) {
@@ -272,6 +275,13 @@ void EspNowNode::teardown() {
   esp_wifi_deinit();
 }
 
+void EspNowNode::teardown() {
+  _setup_successful = false;
+  memset(_host_peer_info.peer_addr, 0x00, ESP_NOW_ETH_ALEN);
+
+  teardownWifiAndEspNow();
+}
+
 bool EspNowNode::sendMessage(void *message, size_t message_size, SendConfiguration configuration) {
   if (!_setup_successful) {
     return false;
@@ -285,6 +295,8 @@ bool EspNowNode::sendMessage(void *message, size_t message_size, SendConfigurati
   // configuration.setup_attempts_on_challenge_failure.
   auto result = sendMessageInternal(message, message_size, configuration);
   while (result == SendInternalResult::NO_CHALLENGE_RECEIVED && setup_attempts_on_challenge_left-- > 0) {
+    // Must set to be able to call setup again, and we don't need to tear down and setup WiFi/ESP NOW again.
+    _setup_successful = false;
     auto setup_result = setup();
     if (!setup_result) {
       log("Failed to do re-setup on challenge failure.", ESP_LOG_WARN);
@@ -371,7 +383,6 @@ EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, si
     if (_on_status) {
       _on_status(Status::INVALID_HOST);
     }
-    teardown(); //  We need to setup again.
     return SendInternalResult::NO_CHALLENGE_RECEIVED;
   }
 

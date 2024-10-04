@@ -233,6 +233,9 @@ private:
    */
   void log(const std::string message, const esp_err_t esp_err);
 
+  bool setupWiFiAndEspNow();
+  void teardownWifiAndEspNow();
+
   /**
    * @brief Connects to WiFi and download new firmware.
    *
