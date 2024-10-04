@@ -233,7 +233,10 @@ private:
    */
   void log(const std::string message, const esp_err_t esp_err);
 
+  bool loadHostAndDiscover();
+
   bool setupWiFiAndEspNow();
+
   void teardownWifiAndEspNow();
 
   /**

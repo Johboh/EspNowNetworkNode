@@ -85,6 +85,18 @@ bool EspNowNode::setup() {
 
   setupWiFiAndEspNow();
 
+  bool success = loadHostAndDiscover();
+
+  if (!success) {
+    teardown(); // Teardown so we can try again.
+  }
+
+  _setup_successful = success;
+  return success;
+}
+
+bool EspNowNode::loadHostAndDiscover() {
+
   // If we have host MAC address, add that one as a peer.
   // Else, add broadcast address and announce our presence.
   // If the mac we have stored is not valid it will be cleared and the setup will be unsuccessful.
@@ -204,11 +216,6 @@ bool EspNowNode::setup() {
     success = false;
   } // end of non valid configuration
 
-  if (!success) {
-    teardown(); // Teardown so we can try again.
-  }
-
-  _setup_successful = success;
   return success;
 }
 
@@ -295,11 +302,10 @@ bool EspNowNode::sendMessage(void *message, size_t message_size, SendConfigurati
   // configuration.setup_attempts_on_challenge_failure.
   auto result = sendMessageInternal(message, message_size, configuration);
   while (result == SendInternalResult::NO_CHALLENGE_RECEIVED && setup_attempts_on_challenge_left-- > 0) {
-    // Must set to be able to call setup again, and we don't need to tear down and setup WiFi/ESP NOW again.
-    _setup_successful = false;
-    auto setup_result = setup();
+    auto setup_result = loadHostAndDiscover();
     if (!setup_result) {
       log("Failed to do re-setup on challenge failure.", ESP_LOG_WARN);
+      teardown();
       return false;
     }
     result = sendMessageInternal(message, message_size, configuration);
