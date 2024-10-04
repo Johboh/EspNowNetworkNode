@@ -11,7 +11,9 @@
 #include <functional>
 #include <string>
 
-#define NUM_MESSAGE_RETRIES 50
+#define NUMBER_OF_RETRIES_FOR_MESSAGE 50
+#define NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST 50
+#define NUMBER_OF_SETUP_ATTEMPTS_ON_CHALLENGE_FAILURE 1
 
 /**
  * @brief ESP Now Network: Node
@@ -149,6 +151,33 @@ public:
    */
   void teardown();
 
+  struct SendConfiguration {
+    /**
+     * @brief number of times to retry on delivery failure. This function
+     * will block until successful or failing delivery of the message. If set to -1,
+     * it will only try once. Will wait 100ms for a reply between each request.
+     */
+    int16_t message_retries = NUMBER_OF_RETRIES_FOR_MESSAGE;
+
+    /**
+     * @brief Number of times to try requesting a challenge. Will wait 100ms for a reply between each request.
+     */
+    int16_t challenge_retries = NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST;
+
+    /**
+     * @brief If there is no challenge response at all after the retries specified by challenge_retries, this could be
+     * due to to a wifi challenge change. If so, we can try to do a setup() again to do another host discovery. However,
+     * if there is no host online, we only try a limited set of time to not end up in an infinite loop.
+     */
+    int16_t setup_attempts_on_challenge_failure = NUMBER_OF_SETUP_ATTEMPTS_ON_CHALLENGE_FAILURE;
+  };
+
+  inline static SendConfiguration _default = SendConfiguration{
+      .message_retries = NUMBER_OF_RETRIES_FOR_MESSAGE,
+      .challenge_retries = NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST,
+      .setup_attempts_on_challenge_failure = NUMBER_OF_SETUP_ATTEMPTS_ON_CHALLENGE_FAILURE,
+  };
+
   /**
    * @brief Send a message to the host (see setup()). Can only be called after a successful setup().
    *
@@ -156,11 +185,9 @@ public:
    *
    * @param message the message to send.
    * @param message_size the size of the message.
-   * @param retries number of times to retry on delivery failure. This function
-   * will block until successful or failing delivery of the message. If set to -1,
-   * it will only try once.
+   * @param configuration the configuration that dictates the send behavior. See the SendConfiguration struct.
    */
-  bool sendMessage(void *message, size_t message_size, int16_t retries = NUM_MESSAGE_RETRIES);
+  bool sendMessage(void *message, size_t message_size, SendConfiguration configuration = _default);
 
   /**
    * Calling this will clear the host.
@@ -176,7 +203,13 @@ private:
   static void esp_now_on_data_callback(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
 #endif
 
-  void sendMessageInternal(uint8_t *buff, size_t length);
+  enum class SendInternalResult { SUCCESS, NO_CHALLENGE_RECEIVED, MESSAGE_SEND_FAILED };
+
+  SendInternalResult sendMessageInternal(void *message, size_t message_size,
+                                         SendConfiguration configuration = _default);
+
+  // Encrypted and send a message using IDF ESP NOW.
+  void encryptAndSendOnWire(uint8_t *buff, size_t length);
 
   /**
    * @brief Send a message and wait for a response message.

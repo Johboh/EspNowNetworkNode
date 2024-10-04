@@ -18,10 +18,6 @@
 // between each message.
 #define NUMBER_OF_RETRIES_FOR_DISCOVERY_REQUEST 50
 
-// Number of times to try requesting a challenge. Will wait for reply as long as defined by TICKS_TO_WAIT_FOR_MESSAGE
-// between each message.
-#define NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST 50
-
 // We are using 2.4Ghz channels
 #define WIFI_CHANNEL_LOWEST 1
 #define WIFI_CHANNEL_HIGHEST 14 // 14 is technically possible to use, but it should be avoided and is very rarely used.
@@ -276,11 +272,32 @@ void EspNowNode::teardown() {
   esp_wifi_deinit();
 }
 
-bool EspNowNode::sendMessage(void *message, size_t message_size, int16_t retries) {
+bool EspNowNode::sendMessage(void *message, size_t message_size, SendConfiguration configuration) {
   if (!_setup_successful) {
     return false;
   }
 
+  int16_t setup_attempts_on_challenge_left = configuration.setup_attempts_on_challenge_failure;
+
+  // Try to send the message using sendMessageInternal.
+  // if configuration.setup_attempts_on_challenge_failure is greater than 0, then try call setup() if result is
+  // SendInternalResult::NO_CHALLENGE_RECEIVED. Only do this as many time as specified in
+  // configuration.setup_attempts_on_challenge_failure.
+  auto result = sendMessageInternal(message, message_size, configuration);
+  while (result == SendInternalResult::NO_CHALLENGE_RECEIVED && setup_attempts_on_challenge_left-- > 0) {
+    auto setup_result = setup();
+    if (!setup_result) {
+      log("Failed to do re-setup on challenge failure.", ESP_LOG_WARN);
+      return false;
+    }
+    result = sendMessageInternal(message, message_size, configuration);
+  }
+
+  return result == SendInternalResult::SUCCESS;
+}
+
+EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, size_t message_size,
+                                                               SendConfiguration configuration) {
   // Application message header
   EspNowMessageHeaderV1 header;
 
@@ -294,10 +311,9 @@ bool EspNowNode::sendMessage(void *message, size_t message_size, int16_t retries
 
   // First, we must request the challenge to use.
   bool got_challange = false;
-  int8_t challenge_retries = NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST;
+  int8_t challenge_retries = configuration.challenge_retries;
   while (!got_challange && challenge_retries-- > 0) {
-    log("Sending challenge request (" +
-            std::to_string(NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST - challenge_retries - 1) + ").",
+    log("Sending challenge request (" + std::to_string(configuration.challenge_retries - challenge_retries - 1) + ").",
         ESP_LOG_INFO);
     auto decrypted_data = sendAndWait((uint8_t *)&request, sizeof(EspNowChallengeRequestV1));
     if (decrypted_data != nullptr) {
@@ -356,7 +372,7 @@ bool EspNowNode::sendMessage(void *message, size_t message_size, int16_t retries
       _on_status(Status::INVALID_HOST);
     }
     teardown(); //  We need to setup again.
-    return false;
+    return SendInternalResult::NO_CHALLENGE_RECEIVED;
   }
 
   uint32_t size = sizeof(EspNowMessageHeaderV1) + message_size;
@@ -367,15 +383,15 @@ bool EspNowNode::sendMessage(void *message, size_t message_size, int16_t retries
   uint16_t attempt = 0;
   log("Sending application message (" + std::to_string(attempt) + ")", ESP_LOG_INFO);
   xEventGroupClearBits(_send_result_event_group, SEND_SUCCESS_BIT | SEND_FAIL_BIT);
-  sendMessageInternal(buff.get(), size);
+  encryptAndSendOnWire(buff.get(), size);
 
   // If negative retries, don't wait.
-  if (retries < 0) {
-    return true;
+  if (configuration.message_retries < 0) {
+    return SendInternalResult::SUCCESS;
   }
 
   bool success = false;
-  while (attempt++ < retries) {
+  while (attempt++ < configuration.message_retries) {
     auto bits = xEventGroupWaitBits(_send_result_event_group, SEND_SUCCESS_BIT | SEND_FAIL_BIT, pdTRUE, pdFALSE,
                                     TICKS_TO_WAIT_FOR_ACK);
     if ((bits & SEND_SUCCESS_BIT) != 0) {
@@ -393,7 +409,7 @@ bool EspNowNode::sendMessage(void *message, size_t message_size, int16_t retries
       std::memcpy(buff.get(), &header, sizeof(EspNowMessageHeaderV1)); // "Refresh" message in buffer.
       log("Sending application message (" + std::to_string(attempt) + ")", ESP_LOG_INFO);
       xEventGroupClearBits(_send_result_event_group, SEND_SUCCESS_BIT | SEND_FAIL_BIT);
-      sendMessageInternal(buff.get(), size);
+      encryptAndSendOnWire(buff.get(), size);
       continue;
     }
   }
@@ -406,13 +422,13 @@ bool EspNowNode::sendMessage(void *message, size_t message_size, int16_t retries
     handleFirmwareUpdate(metadata->wifi_ssid, metadata->wifi_password, metadata->url, metadata->md5);
   }
 
-  if (!success && attempt >= retries) {
+  if (!success && attempt >= configuration.message_retries) {
     // Failed to get ACK on message. We have a valid host as we got challenge response above.
     log("Failed to send message after retries.", ESP_LOG_ERROR);
-    return false;
+    return SendInternalResult::MESSAGE_SEND_FAILED;
   }
 
-  return success;
+  return success ? SendInternalResult::SUCCESS : SendInternalResult::MESSAGE_SEND_FAILED;
 }
 
 void EspNowNode::forgetHost() {
@@ -421,7 +437,7 @@ void EspNowNode::forgetHost() {
   memset(_host_peer_info.peer_addr, 0x00, ESP_NOW_ETH_ALEN);
 }
 
-void EspNowNode::sendMessageInternal(uint8_t *buff, size_t length) {
+void EspNowNode::encryptAndSendOnWire(uint8_t *buff, size_t length) {
   esp_err_t r = _crypt.sendMessage(_host_peer_info.peer_addr, buff, length);
   if (r != ESP_OK) {
     log("_crypt.sendMessage() failure:", r);
@@ -432,7 +448,7 @@ void EspNowNode::sendMessageInternal(uint8_t *buff, size_t length) {
 
 std::unique_ptr<uint8_t[]> EspNowNode::sendAndWait(uint8_t *message, size_t length, uint8_t *out_mac_addr) {
   xQueueReset(_receive_queue);
-  sendMessageInternal(message, length);
+  encryptAndSendOnWire(message, length);
 
   // Wait for reply (with timeout)
   Element element;
