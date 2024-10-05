@@ -190,6 +190,10 @@ bool EspNowNode::loadHostAndDiscover() {
 
           // Ok all good. Copy MAC into host peer and add peer.
           std::memcpy(_host_peer_info.peer_addr, mac_addr, ESP_NOW_ETH_ALEN);
+
+          // Delete any existing peer. Fail silently (e.g. if not exists)
+          esp_now_del_peer(_host_peer_info.peer_addr);
+
           r = esp_now_add_peer(&_host_peer_info);
           if (r != ESP_OK) {
             log("Failed to add peer:", r);
