@@ -19,7 +19,7 @@
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0)
 #include <esp_flash_spi_init.h>
 #endif
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 #include <spi_flash_mmap.h>
 #endif
 
@@ -145,7 +145,7 @@ esp_err_t EspNowOta::httpEventHandler(esp_http_client_event_t *evt) {
   case HTTP_EVENT_HEADER_SENT:
     esp_now_ota->log("HTTP_EVENT_HEADER_SENT", ESP_LOG_VERBOSE);
     break;
-#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
   case HTTP_EVENT_REDIRECT:
     esp_now_ota->log("HTTP_EVENT_REDIRECT", ESP_LOG_VERBOSE);
     break;
