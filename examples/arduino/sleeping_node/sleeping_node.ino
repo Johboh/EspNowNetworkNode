@@ -104,7 +104,26 @@ void setup() {
   if (_esp_now_node.setup()) {
     MyApplicationMessage message;
     message.temperature = 25.6;
-    _esp_now_node.sendMessage(&message, sizeof(MyApplicationMessage));
+    auto result = _esp_now_node.sendMessage(&message, sizeof(MyApplicationMessage));
+    if (result) {
+      auto payload_size = result.value().payload.size;
+      if (payload_size > 0) {
+        Serial.println("Got payload with size " + payload_size);
+
+        auto payload = result.value().payload.buffer;
+        Serial.print("Payload (HEX): ");
+        for (size_t i = 0; i < payload_size; ++i) {
+          if (payload[i] < 0x10)
+            Serial.print("0");
+          Serial.print(payload[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println();
+      }
+      Serial.println("Got timestamp: " + String(result.value().timestamp));
+    } else {
+      Serial.println("Failed to send message.");
+    }
   }
 
   esp_deep_sleep(SLEEP_TIME_US);

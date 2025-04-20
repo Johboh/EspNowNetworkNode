@@ -9,6 +9,7 @@
 #include <esp_netif.h>
 #include <esp_now.h>
 #include <functional>
+#include <optional>
 #include <string>
 
 #define NUMBER_OF_RETRIES_FOR_MESSAGE 50
@@ -178,16 +179,39 @@ public:
       .setup_attempts_on_challenge_failure = NUMBER_OF_SETUP_ATTEMPTS_ON_CHALLENGE_FAILURE,
   };
 
+  struct Payload {
+    uint8_t size = 0;          // Size in bytes of received buffer, or 0 if no payload was received.
+    uint8_t buffer[250] = {0}; // The buffer itself.
+  };
+
+  struct Result {
+    /**
+     * Any payload retured by the host.
+     * Payload is valid until next sendMessage() call.
+     */
+    Payload payload = {
+        .size = 0,
+    };
+    /**
+     * unix timestamp, in seconds, received from the host. Available after a successful sendMessage() call.
+     * Host decide if timestamp is in UTC or local time.
+     */
+    uint64_t timestamp = 0;
+  };
+
   /**
    * @brief Send a message to the host (see setup()). Can only be called after a successful setup().
    *
    * Before the application message is sent, there will be a challenge request/response message exhange with the host.
+   * If the host return a firmware update response, the message will still be sent, but upon completion, the firmare of
+   * this node will be updated.
    *
    * @param message the message to send.
    * @param message_size the size of the message.
    * @param configuration the configuration that dictates the send behavior. See the SendConfiguration struct.
+   * @return std::nullopt on failure, or a Result on a successful message sent.
    */
-  bool sendMessage(void *message, size_t message_size, SendConfiguration configuration = _default);
+  std::optional<Result> sendMessage(void *message, size_t message_size, SendConfiguration configuration = _default);
 
   /**
    * Calling this will clear the host.
@@ -203,10 +227,14 @@ private:
   static void esp_now_on_data_callback(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
 #endif
 
-  enum class SendInternalResult { SUCCESS, NO_CHALLENGE_RECEIVED, MESSAGE_SEND_FAILED };
+  enum class InternalOutcome { SUCCESS, NO_CHALLENGE_RECEIVED, MESSAGE_SEND_FAILED };
 
-  SendInternalResult sendMessageInternal(void *message, size_t message_size,
-                                         SendConfiguration configuration = _default);
+  struct InternalResult {
+    Result result;
+    InternalOutcome outcome;
+  };
+
+  InternalResult sendMessageInternal(void *message, size_t message_size, SendConfiguration configuration = _default);
 
   // Encrypted and send a message using IDF ESP NOW.
   void encryptAndSendOnWire(uint8_t *buff, size_t length);

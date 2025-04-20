@@ -293,33 +293,40 @@ void EspNowNode::teardown() {
   teardownWifiAndEspNow();
 }
 
-bool EspNowNode::sendMessage(void *message, size_t message_size, SendConfiguration configuration) {
+std::optional<EspNowNode::Result> EspNowNode::sendMessage(void *message, size_t message_size,
+                                                          SendConfiguration configuration) {
   if (!_setup_successful) {
-    return false;
+    return std::nullopt;
   }
 
   int16_t setup_attempts_on_challenge_left = configuration.setup_attempts_on_challenge_failure;
 
   // Try to send the message using sendMessageInternal.
   // if configuration.setup_attempts_on_challenge_failure is greater than 0, then try call setup() if result is
-  // SendInternalResult::NO_CHALLENGE_RECEIVED. Only do this as many time as specified in
+  // InternalOutcome::NO_CHALLENGE_RECEIVED. Only do this as many time as specified in
   // configuration.setup_attempts_on_challenge_failure.
-  auto result = sendMessageInternal(message, message_size, configuration);
-  while (result == SendInternalResult::NO_CHALLENGE_RECEIVED && setup_attempts_on_challenge_left-- > 0) {
+  auto internal_result = sendMessageInternal(message, message_size, configuration);
+  while (internal_result.outcome == InternalOutcome::NO_CHALLENGE_RECEIVED && setup_attempts_on_challenge_left-- > 0) {
     auto setup_result = loadHostAndDiscover();
     if (!setup_result) {
       log("Failed to do re-setup on challenge failure.", ESP_LOG_WARN);
       teardown();
-      return false;
+      return std::nullopt;
     }
-    result = sendMessageInternal(message, message_size, configuration);
+    internal_result = sendMessageInternal(message, message_size, configuration);
   }
 
-  return result == SendInternalResult::SUCCESS;
+  if (internal_result.outcome == InternalOutcome::SUCCESS) {
+    return std::optional<Result>(std::move(internal_result.result));
+  }
+
+  return std::nullopt;
 }
 
-EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, size_t message_size,
-                                                               SendConfiguration configuration) {
+EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t message_size,
+                                                           SendConfiguration configuration) {
+  InternalResult internal_result;
+
   // Application message header
   EspNowMessageHeaderV1 header;
 
@@ -348,6 +355,7 @@ EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, si
         // Validate the challenge for the challenge request/response pair
         if (response->challenge_challenge == request.challenge_challenge) {
           header.header_challenge = response->header_challenge;
+          internal_result.result.timestamp = response->timestamp;
           got_challange = true;
         } else {
           log("Challenge mismatch for challenge request/response (expected: " +
@@ -379,6 +387,31 @@ EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, si
         break;
       }
 
+      case MESSAGE_ID_CHALLENGE_PAYLOAD_RESPONSE_V1: {
+        EspNowChallengePayloadResponseV1 *response = (EspNowChallengePayloadResponseV1 *)decrypted_data.get();
+        log("Got challenge payload response with payload size " + std::to_string(response->payload_size), ESP_LOG_INFO);
+
+        // Validate the challenge for the challenge request/response pair
+        if (response->challenge_challenge == request.challenge_challenge) {
+          header.header_challenge = response->header_challenge;
+          internal_result.result.timestamp = response->timestamp;
+          got_challange = true;
+          internal_result.result.payload.size =
+              std::min((uint8_t)sizeof(internal_result.result.payload.buffer), response->payload_size);
+          if (internal_result.result.payload.size > 0) {
+            memcpy(internal_result.result.payload.buffer,
+                   (decrypted_data.get() + sizeof(EspNowChallengePayloadResponseV1)),
+                   internal_result.result.payload.size);
+          }
+        } else {
+          log("Challenge mismatch for challenge request/response (expected: " +
+                  std::to_string(request.challenge_challenge) +
+                  ", got: " + std::to_string(response->challenge_challenge) + ")",
+              ESP_LOG_WARN);
+        }
+        break;
+      }
+
       } // end of switch(id).
     }
   } // end of discovery loop
@@ -393,7 +426,8 @@ EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, si
     if (_on_status) {
       _on_status(Status::INVALID_HOST);
     }
-    return SendInternalResult::NO_CHALLENGE_RECEIVED;
+    internal_result.outcome = InternalOutcome::NO_CHALLENGE_RECEIVED;
+    return internal_result;
   }
 
   uint32_t size = sizeof(EspNowMessageHeaderV1) + message_size;
@@ -408,7 +442,8 @@ EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, si
 
   // If negative retries, don't wait.
   if (configuration.message_retries < 0) {
-    return SendInternalResult::SUCCESS;
+    internal_result.outcome = InternalOutcome::SUCCESS;
+    return internal_result;
   }
 
   bool success = false;
@@ -446,10 +481,12 @@ EspNowNode::SendInternalResult EspNowNode::sendMessageInternal(void *message, si
   if (!success && attempt >= configuration.message_retries) {
     // Failed to get ACK on message. We have a valid host as we got challenge response above.
     log("Failed to send message after retries.", ESP_LOG_ERROR);
-    return SendInternalResult::MESSAGE_SEND_FAILED;
+    internal_result.outcome = InternalOutcome::MESSAGE_SEND_FAILED;
+    return internal_result;
   }
 
-  return success ? SendInternalResult::SUCCESS : SendInternalResult::MESSAGE_SEND_FAILED;
+  internal_result.outcome = success ? InternalOutcome::SUCCESS : InternalOutcome::MESSAGE_SEND_FAILED;
+  return internal_result;
 }
 
 void EspNowNode::forgetHost() {

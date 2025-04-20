@@ -77,7 +77,17 @@ void app_main(void) {
   if (_esp_now_node.setup()) {
     MyApplicationMessage message;
     message.temperature = 25.6;
-    _esp_now_node.sendMessage(&message, sizeof(MyApplicationMessage));
+    auto result = _esp_now_node.sendMessage(&message, sizeof(MyApplicationMessage));
+    if (result) {
+      auto payload_size = result.value().payload.size;
+      if (payload_size > 0) {
+        ESP_LOGI(TAG, "Got payload with size %d", payload_size);
+        ESP_LOG_BUFFER_HEXDUMP(TAG, result.value().payload.buffer, payload_size, ESP_LOG_INFO);
+      }
+      ESP_LOGI(TAG, "Got timestamp %lld", result.value().timestamp);
+    } else {
+      ESP_LOGE(TAG, "Failed to send message.");
+    }
   }
 
   esp_deep_sleep(SLEEP_TIME_US);

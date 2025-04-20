@@ -4,4 +4,4 @@ url: https://github.com/Johboh/EspNowNetworkNode
 dependencies:
   idf: ">=4.4"
   johboh/espnownetworkshared:
-    version: ">=1.0.0"
+    version: ">=1.0.2"
