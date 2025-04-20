@@ -339,10 +339,17 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
   std::unique_ptr<EspNowChallengeFirmwareResponseV1> firmware_update_response = nullptr;
 
   // First, we must request the challenge to use.
-  bool got_challange = false;
-  int8_t challenge_retries = configuration.challenge_retries;
-  while (!got_challange && challenge_retries-- > 0) {
-    log("Sending challenge request (" + std::to_string(configuration.challenge_retries - challenge_retries - 1) + ").",
+  // If challenge is disabled, assume we got challenge already.
+  bool got_challange = configuration.challenge_requests == 0;
+  if (got_challange) {
+    log("Skipping challenge requests. Firmare update, payload and detection of missing host or wrong WiFi channel "
+        "disabled for this message.",
+        ESP_LOG_WARN);
+  }
+  int8_t challenge_requests = configuration.challenge_requests;
+  while (!got_challange && challenge_requests-- > 0) {
+    log("Sending challenge request (" + std::to_string(configuration.challenge_requests - challenge_requests - 1) +
+            ").",
         ESP_LOG_INFO);
     auto decrypted_data = sendAndWait((uint8_t *)&request, sizeof(EspNowChallengeRequestV1));
     if (decrypted_data != nullptr) {

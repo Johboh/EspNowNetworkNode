@@ -162,21 +162,34 @@ public:
 
     /**
      * @brief Number of times to try requesting a challenge. Will wait 100ms for a reply between each request.
+     *
+     * If the host allows it, challenge requests can be skipped by setting this to 0. The host will require challenge
+     * request unless explicilty disabled per node. See host documentation.
+     *
+     * Normally challenge requests are used to prevent replay attacks, by requesting a unique challenge from the host to
+     * use in the subsequent message. This challenge is randomized by the host. Upon responding to the challenge
+     * request, the host also have the option to indicate that there is a new firmware as well as send any additional
+     * payload/configuration. By skipping the challenge request, these two options are not possible. During the
+     * challenge request, there is a detection mechanism to detect WiFi channel change as well as change of host, if we
+     * prevoulsy had a valid channel and host. If challenge request is disabled, this check will also not happen.
+     * However, if the sendMessage() function return non positive result, one could assume the the channel/host is
+     * invalid and can fall forgetHost() to try finding the host/channel again on next message sending attempt.
+     *
+     * Challenge requests involves sending and receiving one additional package. Disabling challenge request will
+     * reduce latency and save power consumption, but with a cost in terms of reduced security, error detection and
+     * firwmare/payload support.
+     *
+     * One could ocacionally send messages with challenge request to check for firmware update, payloads and detect
+     * WiFi channel/host changes.
      */
-    int16_t challenge_retries = NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST;
+    int16_t challenge_requests = NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST;
 
     /**
-     * @brief If there is no challenge response at all after the retries specified by challenge_retries, this could be
+     * @brief If there is no challenge response at all after the retries specified by challenge_requests, this could be
      * due to to a wifi challenge change. If so, we can try to do a setup() again to do another host discovery. However,
      * if there is no host online, we only try a limited set of time to not end up in an infinite loop.
      */
     int16_t setup_attempts_on_challenge_failure = NUMBER_OF_SETUP_ATTEMPTS_ON_CHALLENGE_FAILURE;
-  };
-
-  inline static SendConfiguration _default = SendConfiguration{
-      .message_retries = NUMBER_OF_RETRIES_FOR_MESSAGE,
-      .challenge_retries = NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST,
-      .setup_attempts_on_challenge_failure = NUMBER_OF_SETUP_ATTEMPTS_ON_CHALLENGE_FAILURE,
   };
 
   struct Payload {
@@ -208,13 +221,27 @@ public:
    *
    * @param message the message to send.
    * @param message_size the size of the message.
+   */
+  std::optional<Result> sendMessage(void *message, size_t message_size) {
+    return sendMessage(message, message_size, SendConfiguration{});
+  }
+
+  /**
+   * @brief Send a message to the host (see setup()). Can only be called after a successful setup().
+   *
+   * Before the application message is sent, there will be a challenge request/response message exhange with the host.
+   * If the host return a firmware update response, the message will still be sent, but upon completion, the firmare of
+   * this node will be updated.
+   *
+   * @param message the message to send.
+   * @param message_size the size of the message.
    * @param configuration the configuration that dictates the send behavior. See the SendConfiguration struct.
    * @return std::nullopt on failure, or a Result on a successful message sent.
    */
-  std::optional<Result> sendMessage(void *message, size_t message_size, SendConfiguration configuration = _default);
+  std::optional<Result> sendMessage(void *message, size_t message_size, SendConfiguration configuration);
 
   /**
-   * Calling this will clear the host.
+   * Calling this will clear the host and the WiFi channel.
    * This will clear the stored host MAC, so a new discovery is needed.
    * This will also disable sendMessage(), so a new setup() call is needed after this.
    */
@@ -234,7 +261,7 @@ private:
     InternalOutcome outcome;
   };
 
-  InternalResult sendMessageInternal(void *message, size_t message_size, SendConfiguration configuration = _default);
+  InternalResult sendMessageInternal(void *message, size_t message_size, SendConfiguration configuration);
 
   // Encrypted and send a message using IDF ESP NOW.
   void encryptAndSendOnWire(uint8_t *buff, size_t length);
