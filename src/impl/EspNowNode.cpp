@@ -381,6 +381,7 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
           // Hosts wants us to update firmware. Lets do it. But first send our message.
           // We will update firmware after sending message.
           header.header_challenge = response->header_challenge;
+          internal_result.result.timestamp = response->timestamp;
           got_challange = true;
           // Hand over ownership of decrypted_data to firmware_update_response
           firmware_update_response = std::unique_ptr<EspNowChallengeFirmwareResponseV1>(

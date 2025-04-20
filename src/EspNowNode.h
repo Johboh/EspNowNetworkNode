@@ -206,8 +206,7 @@ public:
         .size = 0,
     };
     /**
-     * unix timestamp, in seconds, received from the host. Available after a successful sendMessage() call.
-     * Host decide if timestamp is in UTC or local time.
+     * unix timestamp, in seconds, UTC, received from the host. Available after a successful sendMessage() call.
      */
     uint64_t timestamp = 0;
   };
