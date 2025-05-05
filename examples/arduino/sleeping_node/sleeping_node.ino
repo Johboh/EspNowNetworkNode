@@ -88,7 +88,7 @@ EspNowNode::OnStatus _on_status = [](EspNowNode::Status status) {
 EspNowPreferences _esp_now_preferences;
 GCMEncryption _gcm_encryption(esp_now_encryption_key, esp_now_encryption_secret);
 #ifdef PLATFORMIO // Uses arduino_esp_crt_bundle_attach
-EspNowNode _esp_now_node(_esp_now_crypt, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
+EspNowNode _esp_now_node(_gcm_encryption, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
                          arduino_esp_crt_bundle_attach);
 #else // uses esp_crt_bundle_attach
 EspNowNode _esp_now_node(_gcm_encryption, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
