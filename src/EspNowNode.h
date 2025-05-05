@@ -3,7 +3,7 @@
 
 #include "EspNowOta.h"
 #include "Preferences.h"
-#include <EspNowCrypt.h>
+#include <GCMEncryption.h>
 #include <esp_idf_version.h>
 #include <esp_log.h>
 #include <esp_netif.h>
@@ -113,7 +113,7 @@ public:
   /**
    * @brief Construct a new EspNowNode.
    *
-   * @param crypt the EspNowCrypt to use for encrypting/decrypting messages.
+   * @param crypt the GCMEncryption to use for encrypting/decrypting messages.
    * @param preferences the EspNowNetwork::Preferences to use for storing/reading preferences.
    * @param firmware_version the (incremental) firmware version that this node is currently running.
    * @param on_status callback on status changes. See Status enum on the different statuses available and suggestion on
@@ -122,7 +122,7 @@ public:
    * @param crt_bundle_attach crt_bundle_attach for either Ardunio (arduino_esp_crt_bundle_attach) or ESP-IDF
    * (esp_crt_bundle_attach).
    */
-  EspNowNode(EspNowCrypt &crypt, EspNowNetwork::Preferences &preferences, uint32_t firmware_version,
+  EspNowNode(GCMEncryption &crypt, EspNowNetwork::Preferences &preferences, uint32_t firmware_version,
              OnStatus on_status = {}, OnLog on_log = {}, CrtBundleAttach crt_bundle_attach = nullptr);
 
 public:
@@ -275,7 +275,7 @@ private:
    * @param out_mac_addr the MAC address of the send of the received message. Must be of size ESP_NOW_ETH_ALEN. If null,
    * will not populate.
    */
-  std::unique_ptr<uint8_t[]> sendAndWait(uint8_t *message, size_t length, uint8_t *out_mac_addr = nullptr);
+  std::vector<uint8_t> sendAndWait(uint8_t *message, size_t length, uint8_t *out_mac_addr = nullptr);
 
   /**
    * @brief Log if log callback is available.
@@ -306,7 +306,7 @@ private:
 private:
   OnLog _on_log;
   OnStatus _on_status;
-  EspNowCrypt &_crypt;
+  GCMEncryption &_crypt;
   esp_netif_t *_netif_sta;
   uint32_t _firmware_version;
   bool _setup_successful = false;

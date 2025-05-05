@@ -5,3 +5,5 @@ dependencies:
   idf: ">=4.4"
   johboh/espnownetworkshared:
     version: ">=1.0.3"
+  johboh/gcmencryption:
+    version: ">=0.5.2"

@@ -36,6 +36,11 @@
       "owner": "johboh",
       "name": "EspNowNetworkShared",
       "version": "^1.0.3"
+    },
+    {
+      "owner": "johboh",
+      "name": "GCMEncryption",
+      "version": "^0.5.2"
     }
   ]
 }

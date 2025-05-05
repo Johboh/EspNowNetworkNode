@@ -1,6 +1,6 @@
-#include <EspNowCrypt.h>
 #include <EspNowNode.h>
 #include <EspNowPreferences.h>
+#include <GCMEncryption.h>
 #include <esp_crt_bundle.h>
 #include <esp_log.h>
 #include <esp_sleep.h>
@@ -62,8 +62,8 @@ EspNowNode::OnStatus _on_status = [](EspNowNode::Status status) {
 };
 
 EspNowPreferences _esp_now_preferences;
-EspNowCrypt _esp_now_crypt(esp_now_encryption_key, esp_now_encryption_secret);
-EspNowNode _esp_now_node(_esp_now_crypt, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
+GCMEncryption _gcm_encryption(esp_now_encryption_key, esp_now_encryption_secret);
+EspNowNode _esp_now_node(_gcm_encryption, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
                          esp_crt_bundle_attach);
 
 extern "C" {

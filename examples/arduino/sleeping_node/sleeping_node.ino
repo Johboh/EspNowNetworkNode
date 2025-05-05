@@ -1,7 +1,7 @@
 #include <Arduino.h>
-#include <EspNowCrypt.h>
 #include <EspNowNode.h>
 #include <EspNowPreferences.h>
+#include <GCMEncryption.h>
 #include <esp_crt_bundle.h>
 
 #define SLEEP_TIME_US (1000LL * 1000LL * 60LL * 1LL) // 1 minute
@@ -86,12 +86,12 @@ EspNowNode::OnStatus _on_status = [](EspNowNode::Status status) {
 };
 
 EspNowPreferences _esp_now_preferences;
-EspNowCrypt _esp_now_crypt(esp_now_encryption_key, esp_now_encryption_secret);
+GCMEncryption _gcm_encryption(esp_now_encryption_key, esp_now_encryption_secret);
 #ifdef PLATFORMIO // Uses arduino_esp_crt_bundle_attach
 EspNowNode _esp_now_node(_esp_now_crypt, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
                          arduino_esp_crt_bundle_attach);
 #else // uses esp_crt_bundle_attach
-EspNowNode _esp_now_node(_esp_now_crypt, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
+EspNowNode _esp_now_node(_gcm_encryption, _esp_now_preferences, FIRMWARE_VERSION, _on_status, _on_log,
                          esp_crt_bundle_attach);
 #endif
 

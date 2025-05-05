@@ -66,7 +66,7 @@ void EspNowNode::esp_now_on_data_callback(const esp_now_recv_info_t *esp_now_inf
 }
 #endif
 
-EspNowNode::EspNowNode(EspNowCrypt &crypt, EspNowNetwork::Preferences &preferences, uint32_t firmware_version,
+EspNowNode::EspNowNode(GCMEncryption &crypt, EspNowNetwork::Preferences &preferences, uint32_t firmware_version,
                        OnStatus on_status, OnLog on_log, CrtBundleAttach crt_bundle_attach)
     : _on_log(on_log), _on_status(on_status), _crypt(crypt), _firmware_version(firmware_version),
       _crt_bundle_attach(crt_bundle_attach), _preferences(preferences) {
@@ -165,8 +165,8 @@ bool EspNowNode::loadHostAndDiscover() {
               std::to_string(NUMBER_OF_RETRIES_FOR_CHALLENGE_REQUEST - retries - 1) + ")",
           ESP_LOG_INFO);
       auto decrypted_data = sendAndWait((uint8_t *)&request, sizeof(EspNowDiscoveryRequestV1), mac_addr);
-      if (decrypted_data != nullptr) {
-        EspNowDiscoveryResponseV1 *response = (EspNowDiscoveryResponseV1 *)decrypted_data.get();
+      if (!decrypted_data.empty()) {
+        EspNowDiscoveryResponseV1 *response = (EspNowDiscoveryResponseV1 *)decrypted_data.data();
         auto confirmed = response->id == MESSAGE_ID_DISCOVERY_RESPONSE_V1 &&
                          response->discovery_challenge == request.discovery_challenge &&
                          isValidWiFiChannel(response->channel);
@@ -352,13 +352,13 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
             ").",
         ESP_LOG_INFO);
     auto decrypted_data = sendAndWait((uint8_t *)&request, sizeof(EspNowChallengeRequestV1));
-    if (decrypted_data != nullptr) {
-      auto id = decrypted_data.get()[0];
+    if (!decrypted_data.empty()) {
+      auto id = decrypted_data.data()[0];
 
       switch (id) {
       case MESSAGE_ID_CHALLENGE_RESPONSE_V1: {
         log("Got challenge response.", ESP_LOG_INFO);
-        EspNowChallengeResponseV1 *response = (EspNowChallengeResponseV1 *)decrypted_data.get();
+        EspNowChallengeResponseV1 *response = (EspNowChallengeResponseV1 *)decrypted_data.data();
         // Validate the challenge for the challenge request/response pair
         if (response->challenge_challenge == request.challenge_challenge) {
           header.header_challenge = response->header_challenge;
@@ -375,7 +375,7 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
 
       case MESSAGE_ID_CHALLENGE_FIRMWARE_RESPONSE_V1: {
         log("Got challenge update firmware response.", ESP_LOG_INFO);
-        EspNowChallengeFirmwareResponseV1 *response = (EspNowChallengeFirmwareResponseV1 *)decrypted_data.get();
+        EspNowChallengeFirmwareResponseV1 *response = (EspNowChallengeFirmwareResponseV1 *)decrypted_data.data();
         // Validate the challenge for the challenge request/response pair
         if (response->challenge_challenge == request.challenge_challenge) {
           // Hosts wants us to update firmware. Lets do it. But first send our message.
@@ -385,7 +385,7 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
           got_challange = true;
           // Hand over ownership of decrypted_data to firmware_update_response
           firmware_update_response = std::unique_ptr<EspNowChallengeFirmwareResponseV1>(
-              reinterpret_cast<EspNowChallengeFirmwareResponseV1 *>(decrypted_data.release()));
+              reinterpret_cast<EspNowChallengeFirmwareResponseV1 *>(decrypted_data.data()));
         } else {
           log("Challenge mismatch for challenge request/ firmware response (expected: " +
                   std::to_string(request.challenge_challenge) +
@@ -396,7 +396,7 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
       }
 
       case MESSAGE_ID_CHALLENGE_PAYLOAD_RESPONSE_V1: {
-        EspNowChallengePayloadResponseV1 *response = (EspNowChallengePayloadResponseV1 *)decrypted_data.get();
+        EspNowChallengePayloadResponseV1 *response = (EspNowChallengePayloadResponseV1 *)decrypted_data.data();
         log("Got challenge payload response with payload size " + std::to_string(response->payload_size), ESP_LOG_INFO);
 
         // Validate the challenge for the challenge request/response pair
@@ -408,7 +408,7 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
               std::min((uint8_t)sizeof(internal_result.result.payload.buffer), response->payload_size);
           if (internal_result.result.payload.size > 0) {
             memcpy(internal_result.result.payload.buffer,
-                   (decrypted_data.get() + sizeof(EspNowChallengePayloadResponseV1)),
+                   (decrypted_data.data() + sizeof(EspNowChallengePayloadResponseV1)),
                    internal_result.result.payload.size);
           }
         } else {
@@ -504,7 +504,8 @@ void EspNowNode::forgetHost() {
 }
 
 void EspNowNode::encryptAndSendOnWire(uint8_t *buff, size_t length) {
-  esp_err_t r = _crypt.sendMessage(_host_peer_info.peer_addr, buff, length);
+  auto encrypted = _crypt.encrypt(buff, length);
+  esp_err_t r = esp_now_send(_host_peer_info.peer_addr, encrypted.data(), encrypted.size());
   if (r != ESP_OK) {
     log("_crypt.sendMessage() failure:", r);
   } else {
@@ -512,7 +513,7 @@ void EspNowNode::encryptAndSendOnWire(uint8_t *buff, size_t length) {
   }
 }
 
-std::unique_ptr<uint8_t[]> EspNowNode::sendAndWait(uint8_t *message, size_t length, uint8_t *out_mac_addr) {
+std::vector<uint8_t> EspNowNode::sendAndWait(uint8_t *message, size_t length, uint8_t *out_mac_addr) {
   xQueueReset(_receive_queue);
   encryptAndSendOnWire(message, length);
 
@@ -523,9 +524,9 @@ std::unique_ptr<uint8_t[]> EspNowNode::sendAndWait(uint8_t *message, size_t leng
     if (out_mac_addr != nullptr) {
       std::memcpy(out_mac_addr, element.mac_addr, ESP_NOW_ETH_ALEN);
     }
-    return _crypt.decryptMessage(element.data);
+    return _crypt.decrypt(element.data);
   }
-  return nullptr;
+  return std::vector<uint8_t>();
 }
 
 void EspNowNode::log(const std::string message, const esp_log_level_t log_level) {
