@@ -383,9 +383,8 @@ EspNowNode::InternalResult EspNowNode::sendMessageInternal(void *message, size_t
           header.header_challenge = response->header_challenge;
           internal_result.result.timestamp = response->timestamp;
           got_challange = true;
-          // Hand over ownership of decrypted_data to firmware_update_response
-          firmware_update_response = std::unique_ptr<EspNowChallengeFirmwareResponseV1>(
-              reinterpret_cast<EspNowChallengeFirmwareResponseV1 *>(decrypted_data.data()));
+          // Copy the firmware response into a new heap-allocated object
+          firmware_update_response = std::make_unique<EspNowChallengeFirmwareResponseV1>(*response);
         } else {
           log("Challenge mismatch for challenge request/ firmware response (expected: " +
                   std::to_string(request.challenge_challenge) +
