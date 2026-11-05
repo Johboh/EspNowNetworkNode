@@ -1,3 +1,6 @@
+// Copyright (c) Johan Böhlin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #ifndef __ESP_NOW_PREFERENCES_H__
 #define __ESP_NOW_PREFERENCES_H__
 

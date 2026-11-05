@@ -1,3 +1,6 @@
+// Copyright (c) Johan Böhlin
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include <EspNowPreferences.h>
 #include <esp_err.h>
 #include <esp_log.h>
