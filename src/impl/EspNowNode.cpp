@@ -52,9 +52,12 @@ void EspNowNode::esp_now_on_data_callback_legacy(const uint8_t *mac_addr, const 
   Element element;
   std::memcpy(element.mac_addr, mac_addr, ESP_NOW_ETH_ALEN);
   if (data_len > 0) {
-    std::memcpy(element.data, data, std::min((size_t)data_len, sizeof(element.data)));
+    size_t copy_len = std::min((size_t)data_len, sizeof(element.data));
+    std::memcpy(element.data, data, copy_len);
+    element.data_len = copy_len;
+  } else {
+    element.data_len = 0;
   }
-  element.data_len = data_len;
 
   auto xHigherPriorityTaskWoken = pdFALSE;
   auto result = xQueueSendFromISR(_receive_queue, &element, &xHigherPriorityTaskWoken);
@@ -526,7 +529,7 @@ std::vector<uint8_t> EspNowNode::sendAndWait(uint8_t *message, size_t length, ui
     if (out_mac_addr != nullptr) {
       std::memcpy(out_mac_addr, element.mac_addr, ESP_NOW_ETH_ALEN);
     }
-    return _crypt.decrypt(element.data);
+    return _crypt.decrypt(element.data, std::min(element.data_len, sizeof(element.data)));
   }
   return std::vector<uint8_t>();
 }
