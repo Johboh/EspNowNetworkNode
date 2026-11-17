@@ -1,8 +1,9 @@
 // Copyright (c) Johan Böhlin
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "EspNowOta.h"
 #include <EspNowNode.h>
+#include <OtaHelper.h>
+#include <WiFiHelper.h>
 #include <cstring>
 #include <esp-now-structs.h>
 #include <esp_random.h>
@@ -575,13 +576,16 @@ void EspNowNode::handleFirmwareUpdate(char *wifi_ssid, char *wifi_password, char
   teardown();
 
   // Connect to wifi.
-  EspNowOta _esp_now_ota(
-      [&](const std::string message, const esp_log_level_t log_level) { log("EspNowOta: " + message, log_level); },
-      _crt_bundle_attach);
+  char hostname[32];
+  snprintf(hostname, sizeof(hostname), "espnownode_%02x%02x%02x", _host_peer_info.peer_addr[3],
+           _host_peer_info.peer_addr[4], _host_peer_info.peer_addr[5]);
+  WiFiHelper _wifi_helper(hostname);
+  if (_on_log) {
+    _wifi_helper.addOnLog(
+        [&](const std::string &message, const esp_log_level_t log_level) { log("WiFiHelper: " + message, log_level); });
+  }
 
-  uint16_t retries = 2;
-  unsigned long connect_timeout_ms = 15000;
-  if (!_esp_now_ota.connectToWiFi(wifi_ssid, wifi_password, connect_timeout_ms, retries)) {
+  if (!_wifi_helper.connectToAp(wifi_ssid, wifi_password, false, 15000)) {
     log("Connection to WiFi failed! Restarting...", ESP_LOG_ERROR);
     if (_on_status) {
       _on_status(Status::FIRMWARE_UPDATE_WIFI_SETUP_FAILED);
@@ -592,17 +596,30 @@ void EspNowNode::handleFirmwareUpdate(char *wifi_ssid, char *wifi_password, char
 
   // Ok we have WiFi.
   // Download file.
+  OtaHelper _ota_helper(
+      {
+          .web_ota = {.enabled = false},
+          .arduino_ota = {.enabled = false},
+          .rollback_strategy = OtaHelper::RollbackStrategy::MANUAL,
+      },
+      _crt_bundle_attach);
+  if (_on_log) {
+    _ota_helper.addOnLog(
+        [&](const std::string &message, const esp_log_level_t log_level) { log("OtaHelper: " + message, log_level); });
+  }
+
   auto urlstr = std::string(url);
-  auto md5str = std::string(md5, md5 + 32);
-  bool success = _esp_now_ota.updateFrom(urlstr, md5str);
+  auto md5str = std::string(md5, 32);
+  bool success = _ota_helper.updateFrom(urlstr, OtaHelper::FlashMode::FIRMWARE, md5str);
+  _wifi_helper.disconnect();
 
   if (success) {
-    log("Firwmare update successful. Rebooting.", ESP_LOG_INFO);
+    log("Firmware update successful. Rebooting.", ESP_LOG_INFO);
     if (_on_status) {
       _on_status(Status::FIRMWARE_UPDATE_SUCCESSFUL);
     }
   } else {
-    log("Firwmare update failed. Rebooting.", ESP_LOG_ERROR);
+    log("Firmware update failed. Rebooting.", ESP_LOG_ERROR);
     if (_on_status) {
       _on_status(Status::FIRMWARE_UPDATE_FAILED);
     }

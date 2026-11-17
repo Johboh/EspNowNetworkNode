@@ -28,6 +28,7 @@ jobs:
           arduino-cli core install esp32:esp32@3.0.2
           arduino-cli lib install EspNowNetworkShared
           arduino-cli lib install GCMEncryption
+          arduino-cli lib install ConnectionHelper
 
       - name: Install repo as library
         run: |

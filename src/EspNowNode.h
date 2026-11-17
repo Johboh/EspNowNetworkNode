@@ -4,9 +4,9 @@
 #ifndef __ESP_NOW_NODE_H__
 #define __ESP_NOW_NODE_H__
 
-#include "EspNowOta.h"
 #include "Preferences.h"
 #include <GCMEncryption.h>
+#include <OtaHelper.h>
 #include <esp_idf_version.h>
 #include <esp_log.h>
 #include <esp_netif.h>
@@ -111,7 +111,7 @@ public:
    *
    * C style function.
    */
-  typedef EspNowOta::CrtBundleAttach CrtBundleAttach;
+  typedef OtaHelper::CrtBundleAttach CrtBundleAttach;
 
   /**
    * @brief Construct a new EspNowNode.

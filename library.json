@@ -41,6 +41,11 @@
       "owner": "johboh",
       "name": "GCMEncryption",
       "version": "^1.0.0"
+    },
+    {
+      "owner": "johboh",
+      "name": "ConnectionHelper",
+      "version": "^3.0.18"
     }
   ]
 }

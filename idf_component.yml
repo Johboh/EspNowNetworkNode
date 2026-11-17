@@ -8,3 +8,5 @@ dependencies:
     version: ">=1.0.4"
   johboh/gcmencryption:
     version: ">=1.0.0"
+  johboh/connectionhelper:
+    version: ">=3.0.18"
