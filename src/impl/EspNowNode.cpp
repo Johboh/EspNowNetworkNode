@@ -6,9 +6,12 @@
 #include <cstring>
 #include <esp-now-structs.h>
 #include <esp_random.h>
+#include <esp_system.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 // Bits used for send ACKs to notify the _send_result_event_group Even Group.
 #define SEND_SUCCESS_BIT 0x01
@@ -34,7 +37,11 @@ struct Element {
 static QueueHandle_t _receive_queue = xQueueCreate(5, sizeof(Element));
 static EventGroupHandle_t _send_result_event_group = xEventGroupCreate();
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+void EspNowNode::esp_now_on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status) {
+#else
 void EspNowNode::esp_now_on_data_sent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+#endif
 
   // Set event bits based on result.
   auto xHigherPriorityTaskWoken = pdFALSE;
@@ -47,6 +54,9 @@ void EspNowNode::esp_now_on_data_sent(const uint8_t *mac_addr, esp_now_send_stat
 }
 
 void EspNowNode::esp_now_on_data_callback_legacy(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  if (mac_addr == nullptr) {
+    return;
+  }
   // New message received on ESP-NOW.
   // Add to queue and leave callback as soon as we can.
   Element element;
@@ -68,7 +78,9 @@ void EspNowNode::esp_now_on_data_callback_legacy(const uint8_t *mac_addr, const 
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
 void EspNowNode::esp_now_on_data_callback(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len) {
-  esp_now_on_data_callback_legacy(esp_now_info->src_addr, data, data_len);
+  if (esp_now_info != nullptr && esp_now_info->src_addr != nullptr) {
+    esp_now_on_data_callback_legacy(esp_now_info->src_addr, data, data_len);
+  }
 }
 #endif
 
@@ -77,6 +89,7 @@ EspNowNode::EspNowNode(GCMEncryption &crypt, EspNowNetwork::Preferences &prefere
     : _on_log(on_log), _on_status(on_status), _crypt(crypt), _firmware_version(firmware_version),
       _crt_bundle_attach(crt_bundle_attach), _preferences(preferences) {
 
+  std::memset(&_host_peer_info, 0, sizeof(esp_now_peer_info_t));
   _host_peer_info.ifidx = WIFI_IF_STA;
   _host_peer_info.channel = 0;     // Channel 0 means "use the same channel as WiFi". We don't use WiFi, but ESP-NOW is
                                    // using the MAC layer beneath.
@@ -239,10 +252,12 @@ bool EspNowNode::setupWiFiAndEspNow() {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_start());
 
-  // TODO(johboh): this might unset WIFI6 for ESP32-C6, but getting current protocols and appending WIFI_PROTOCOL_LR and
-  // then setting them again, fails with bad argument. Presumably a bug in esp_wifi_set_protocol not supporting
-  // WIFI_PROTOCOL_11AX?
+#if CONFIG_IDF_TARGET_ESP32C6 && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 1, 0)
+  uint8_t protocol_bitmap =
+      WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_11AX | WIFI_PROTOCOL_LR;
+#else
   uint8_t protocol_bitmap = WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR;
+#endif
   ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, protocol_bitmap));
 
   // Init ESP-NOW
@@ -255,13 +270,16 @@ bool EspNowNode::setupWiFiAndEspNow() {
     log("Initializing ESP-NOW OK.", ESP_LOG_INFO);
   }
 
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(6, 0, 0)
   // Deprecated, but esp_now_set_peer_rate_config(peer_info.peer_addr, &esp_now_rate_config); does not work.
   // See https://github.com/espressif/esp-idf/issues/11751 and https://www.esp32.com/viewtopic.php?t=34546
   r = esp_wifi_config_espnow_rate(WIFI_IF_STA, WIFI_PHY_RATE_LORA_250K);
   log("configuring espnow rate (legacy) failed:", r);
+#endif
 
   r = esp_now_register_send_cb(esp_now_on_data_sent);
   log("Registering send callback for esp now failed:", r);
+  bool ok = r == ESP_OK;
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
   r = esp_now_register_recv_cb(esp_now_on_data_callback);
@@ -269,8 +287,9 @@ bool EspNowNode::setupWiFiAndEspNow() {
   r = esp_now_register_recv_cb(esp_now_on_data_callback_legacy);
 #endif
   log("Registering receive callback for esp now failed:", r);
+  ok = ok && (r == ESP_OK);
 
-  return r == ESP_OK;
+  return ok;
 }
 
 void EspNowNode::teardownWifiAndEspNow() {

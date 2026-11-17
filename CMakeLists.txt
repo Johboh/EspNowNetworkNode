@@ -1,6 +1,6 @@
 FILE(GLOB_RECURSE sources "./src/impl/*.*")
 
-if(IDF_VERSION_MAJOR GREATER_EQUAL 5 AND IDF_VERSION_MINOR GREATER_EQUAL 4)
+if(IDF_VERSION_MAJOR GREATER 5 OR (IDF_VERSION_MAJOR EQUAL 5 AND IDF_VERSION_MINOR GREATER_EQUAL 4))
 set(required_components mbedtls esp_wifi esp_http_client esp_partition esp-tls nvs_flash bootloader_support app_update spi_flash)
 elseif(IDF_VERSION_MAJOR GREATER_EQUAL 5)
 set(required_components mbedtls esp_wifi esp_http_client esp_partition esp-tls nvs_flash bootloader_support app_update)

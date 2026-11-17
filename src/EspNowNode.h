@@ -250,7 +250,11 @@ public:
   void forgetHost();
 
 private:
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 5, 0)
+  static void esp_now_on_data_sent(const esp_now_send_info_t *tx_info, esp_now_send_status_t status);
+#else
   static void esp_now_on_data_sent(const uint8_t *mac_addr, esp_now_send_status_t status);
+#endif
   static void esp_now_on_data_callback_legacy(const uint8_t *mac_addr, const uint8_t *data, int data_len);
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
   static void esp_now_on_data_callback(const esp_now_recv_info_t *esp_now_info, const uint8_t *data, int data_len);
@@ -315,7 +319,7 @@ private:
   bool _setup_successful = false;
   bool _esp_now_initialized = false;
   CrtBundleAttach _crt_bundle_attach;
-  esp_now_peer_info_t _host_peer_info;
+  esp_now_peer_info_t _host_peer_info = {};
   EspNowNetwork::Preferences &_preferences;
 };
 

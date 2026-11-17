@@ -3,7 +3,7 @@ description: Node code for the EspNowNetwork, see https://github.com/Johboh/EspN
 url: https://github.com/Johboh/EspNowNetworkNode
 license: "GPL-3.0-or-later"
 dependencies:
-  idf: ">=4.4"
+  idf: ">=5.0"
   johboh/espnownetworkshared:
     version: ">=1.0.4"
   johboh/gcmencryption:
