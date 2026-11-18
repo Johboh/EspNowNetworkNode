@@ -596,13 +596,11 @@ void EspNowNode::handleFirmwareUpdate(char *wifi_ssid, char *wifi_password, char
 
   // Ok we have WiFi.
   // Download file.
-  OtaHelper _ota_helper(
-      {
-          .web_ota = {.enabled = false},
-          .arduino_ota = {.enabled = false},
-          .rollback_strategy = OtaHelper::RollbackStrategy::MANUAL,
-      },
-      _crt_bundle_attach);
+  OtaHelper::Configuration ota_config;
+  ota_config.web_ota.enabled = false;
+  ota_config.arduino_ota.enabled = false;
+  ota_config.rollback_strategy = OtaHelper::RollbackStrategy::MANUAL;
+  OtaHelper _ota_helper(ota_config, _crt_bundle_attach);
   if (_on_log) {
     _ota_helper.addOnLog(
         [&](const std::string &message, const esp_log_level_t log_level) { log("OtaHelper: " + message, log_level); });
